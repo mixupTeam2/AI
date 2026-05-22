@@ -93,7 +93,7 @@ def run_type_agent(
           "is_complete": True  # 10주 이상이면 True
         }
     """
-    key = api_key or os.environ.get("UPSTAGE_API_KEY")
+    key = api_key or os.environ.get("SOLAR_API_KEY") or os.environ.get("UPSTAGE_API_KEY")
     if not key:
         raise ValueError("API 키가 필요합니다.")
 

@@ -55,7 +55,7 @@ def run_values_agent(
         rag_context: Graph DB에서 검색한 유사 유저 패턴 (선택)
         user_id / week: Neo4j 저장용 메타데이터 (선택)
     """
-    key = api_key or os.environ.get("UPSTAGE_API_KEY")
+    key = api_key or os.environ.get("SOLAR_API_KEY") or os.environ.get("UPSTAGE_API_KEY")
     if not key:
         raise ValueError("API 키가 필요합니다.")
 
