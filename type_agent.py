@@ -6,32 +6,41 @@ from typing import Optional
 SOLAR_API_URL = "https://api.upstage.ai/v1/solar/chat/completions"
 SOLAR_MODEL = "solar-pro3"
 
-# 4축 정의
+# 4축 정의 (양수 = 앞 유형, 음수 = 뒤 유형)
 AXES = {
-    "axis1": ("E", "B", "에너지 방향"),
-    "axis2": ("C", "D", "관계 방향"),
-    "axis3": ("S", "I", "사고 방향"),
-    "axis4": ("G", "P", "동기 방향"),
+    "axis1": ("E", "A", "감정 대응 방식"),   # E(외향/+) vs A(내향/-)
+    "axis2": ("P", "X", "행동 전략"),         # P(계획/+) vs X(탐색/-)
+    "axis3": ("G", "R", "동기 원천"),         # G(성장/+) vs R(인정/-)
+    "axis4": ("C", "S", "스트레스 반응"),     # C(지속/+) vs S(전환/-)
 }
 
 CARE_TYPES = {
-    "ECSG": ("설계하는 탐험가", "새로운 걸 체계적으로 만드는 사람"),
-    "BDIP": ("깊이 파는 장인", "한 분야를 끝까지 갈아 임팩트를 내는 사람"),
-    "ECIG": ("직관적 연결자", "사람과 아이디어를 감각으로 잇는 사람"),
-    "BDSG": ("완성하는 전문가", "논리와 데이터로 결과물을 만드는 사람"),
-    "ECSP": ("기획하는 리더", "체계적으로 팀을 이끌어 임팩트를 내는 사람"),
-    # 나머지 11개 조합 — 미정의 유형은 아래 fallback으로 처리
+    "APGC": ("묵묵한 설계자",     "혼자 계획을 세우고 묵묵히 성장해나가는 유형"),
+    "APGS": ("유연한 전략가",     "내면 중심이지만 막히면 유연하게 방향을 바꾸는 유형"),
+    "APRC": ("인정받는 완벽주의자","혼자 철저히 준비해 결과로 인정받으려는 유형"),
+    "APRS": ("현실적인 조율자",   "평가를 의식하면서도 현실적으로 방향을 조율하는 유형"),
+    "AXGC": ("고독한 탐험가",     "혼자 다양한 시도를 하며 배움에서 동력을 얻는 유형"),
+    "AXGS": ("자유로운 실험가",   "혼자 이것저것 시도하다 막히면 쉽게 전환하는 유형"),
+    "AXRC": ("승부사형 도전자",   "혼자 도전하며 결과와 인정을 위해 버티는 유형"),
+    "AXRS": ("감각적인 방랑자",   "혼자 경험을 쌓으며 반응에 따라 방향을 바꾸는 유형"),
+    "EPGC": ("열정적인 추진자",   "공유하며 동기를 얻고 성장을 위해 끝까지 밀어붙이는 유형"),
+    "EPGS": ("공감형 리더",       "함께 계획하고 성장하되 상황에 따라 유연하게 전환하는 유형"),
+    "EPRC": ("무대형 실행가",     "표출하며 에너지를 얻고 인정받기 위해 계획을 고수하는 유형"),
+    "EPRS": ("유쾌한 전환자",     "공유하며 인정받되 막히면 빠르게 방향을 전환하는 유형"),
+    "EXGC": ("에너지형 탐색자",   "다양한 시도를 공유하며 배움 자체에서 동력을 얻는 유형"),
+    "EXGS": ("네트워크형 모험가", "사람들과 함께 탐색하며 막히면 자연스럽게 전환하는 유형"),
+    "EXRC": ("존재감형 도전자",   "표출하며 다양하게 도전해 인정받고자 끝까지 버티는 유형"),
+    "EXRS": ("감성적인 흐름형",   "감각과 공유로 이것저것 시도하다 흐름에 따라 전환하는 유형"),
 }
 
 DESCRIBE_PROMPT = """당신은 CareType 취업준비생 유형 분석가입니다.
-누적 점수 기반으로 결정된 CareType 코드와 4축 성향을 바탕으로 유형 설명을 작성해주세요.
+누적 점수 기반으로 결정된 CareType 코드와 4축 성향을 바탕으로 케어 팁을 작성해주세요.
 
 반드시 아래 JSON만 반환하세요:
 {
-  "type_name": "유형명 (3~5자)",
-  "description": "이 유형 한 줄 설명",
   "strengths": ["강점1", "강점2", "강점3"],
-  "care_tip": "이 유형에게 맞는 취준 케어 팁 한 줄"
+  "care_tip": "이 유형에게 맞는 취준 케어 팁 한 줄",
+  "risk": "이 유형이 주의해야 할 번아웃 패턴 한 줄"
 }"""
 
 
@@ -57,7 +66,7 @@ def _parse_json(raw: str) -> dict:
     return json.loads(raw)
 
 
-def _calculate_code(cumulative_scores: dict) -> str:
+def _calculate_code(cumulative_scores: list[dict]) -> str:
     """누적 점수 합산 → 4자리 CareType 코드 결정"""
     code = ""
     for axis_key, (pos_label, neg_label, _) in AXES.items():
@@ -76,21 +85,22 @@ def run_type_agent(
 
     Args:
         cumulative_scores: 주차별 pattern_agent 결과 리스트
-                           [{"axis1": {"score": 1, ...}, "axis2": {...}, ...}, ...]
+                           [{"axis1": {"score": 1}, "axis2": {"score": -1}, ...}, ...]
         api_key: Upstage API 키 (없으면 UPSTAGE_API_KEY 환경변수 사용)
         user_id: Neo4j 저장용 메타데이터 (선택)
 
     Returns:
         {
-          "code": "ECSG",
-          "weeks_accumulated": 10,
-          "axis_totals": {"axis1": 5, "axis2": -2, "axis3": 3, "axis4": 1},
-          "axis_labels": {"axis1": "E", "axis2": "D", "axis3": "S", "axis4": "G"},
-          "type_name": "설계하는 탐험가",
+          "code": "APGC",
+          "type_name": "묵묵한 설계자",
           "description": "...",
           "strengths": [...],
           "care_tip": "...",
-          "is_complete": True  # 10주 이상이면 True
+          "risk": "...",
+          "weeks_accumulated": 10,
+          "is_complete": True,
+          "axis_totals": {"axis1": 5, ...},
+          "axis_labels": {"axis1": "E", ...}
         }
     """
     key = api_key or os.environ.get("UPSTAGE_API_KEY")
@@ -103,53 +113,52 @@ def run_type_agent(
     # 축별 누적 합산
     axis_totals = {}
     axis_labels = {}
-    for axis_key, (pos_label, neg_label, axis_name) in AXES.items():
+    for axis_key, (pos_label, neg_label, _) in AXES.items():
         total = sum(week.get(axis_key, {}).get("score", 0) for week in cumulative_scores)
         axis_totals[axis_key] = total
         axis_labels[axis_key] = pos_label if total >= 0 else neg_label
 
     code = "".join(axis_labels[k] for k in ["axis1", "axis2", "axis3", "axis4"])
+    type_name, description = CARE_TYPES.get(code, ("알 수 없는 유형", ""))
 
-    # 미리 정의된 유형이면 바로 사용, 없으면 Solar로 생성
-    if code in CARE_TYPES:
-        type_name, description = CARE_TYPES[code]
-        type_info = {"type_name": type_name, "description": description, "strengths": [], "care_tip": ""}
-    else:
-        axis_summary = "\n".join(
-            f"- {name}({pos}/{neg}): 누적점수 {axis_totals[k]} → {axis_labels[k]}형"
-            for k, (pos, neg, name) in AXES.items()
-        )
-        raw = _call_solar([
-            {"role": "system", "content": DESCRIBE_PROMPT},
-            {"role": "user", "content": f"CareType 코드: {code}\n\n4축 성향:\n{axis_summary}"},
-        ], key)
-        type_info = _parse_json(raw)
+    # Solar로 강점·케어팁·리스크 생성
+    axis_summary = "\n".join(
+        f"- {name}({pos}/{neg}): 누적점수 {axis_totals[k]} → {axis_labels[k]}형"
+        for k, (pos, neg, name) in AXES.items()
+    )
+    extra = _parse_json(_call_solar([
+        {"role": "system", "content": DESCRIBE_PROMPT},
+        {"role": "user", "content": f"CareType 코드: {code} ({type_name})\n\n4축 성향:\n{axis_summary}"},
+    ], key))
 
     return {
         "code": code,
+        "type_name": type_name,
+        "description": description,
+        "strengths": extra.get("strengths", []),
+        "care_tip": extra.get("care_tip", ""),
+        "risk": extra.get("risk", ""),
         "weeks_accumulated": weeks,
         "is_complete": is_complete,
         "axis_totals": axis_totals,
         "axis_labels": axis_labels,
-        **type_info,
         "meta": {"user_id": user_id},
     }
 
 
 if __name__ == "__main__":
-    # 10주치 샘플 데이터
     sample_scores = [
-        {"axis1": {"score": 2}, "axis2": {"score": 1}, "axis3": {"score": 1}, "axis4": {"score": 2}},
-        {"axis1": {"score": 1}, "axis2": {"score": 0}, "axis3": {"score": 2}, "axis4": {"score": 1}},
-        {"axis1": {"score": 2}, "axis2": {"score": 1}, "axis3": {"score": 1}, "axis4": {"score": 0}},
-        {"axis1": {"score": 0}, "axis2": {"score": -1}, "axis3": {"score": 2}, "axis4": {"score": 1}},
-        {"axis1": {"score": 1}, "axis2": {"score": 1}, "axis3": {"score": 0}, "axis4": {"score": 2}},
-        {"axis1": {"score": 2}, "axis2": {"score": 0}, "axis3": {"score": 1}, "axis4": {"score": 1}},
-        {"axis1": {"score": 1}, "axis2": {"score": 1}, "axis3": {"score": 2}, "axis4": {"score": 0}},
-        {"axis1": {"score": -1}, "axis2": {"score": 2}, "axis3": {"score": 1}, "axis4": {"score": 1}},
-        {"axis1": {"score": 2}, "axis2": {"score": 1}, "axis3": {"score": 0}, "axis4": {"score": 2}},
-        {"axis1": {"score": 1}, "axis2": {"score": 0}, "axis3": {"score": 1}, "axis4": {"score": 1}},
-    ]
+        {"axis1": {"score": -1}, "axis2": {"score": 2}, "axis3": {"score": 1}, "axis4": {"score": 2}},
+        {"axis1": {"score": -2}, "axis2": {"score": 1}, "axis3": {"score": 2}, "axis4": {"score": 1}},
+        {"axis1": {"score": 0},  "axis2": {"score": 2}, "axis3": {"score": 1}, "axis4": {"score": 2}},
+        {"axis1": {"score": -1}, "axis2": {"score": 1}, "axis3": {"score": 2}, "axis4": {"score": 1}},
+        {"axis1": {"score": -2}, "axis2": {"score": 2}, "axis3": {"score": 1}, "axis4": {"score": 2}},
+        {"axis1": {"score": -1}, "axis2": {"score": 1}, "axis3": {"score": 2}, "axis4": {"score": 1}},
+        {"axis1": {"score": 0},  "axis2": {"score": 2}, "axis3": {"score": 1}, "axis4": {"score": 2}},
+        {"axis1": {"score": -1}, "axis2": {"score": 1}, "axis3": {"score": 1}, "axis4": {"score": 1}},
+        {"axis1": {"score": -2}, "axis2": {"score": 2}, "axis3": {"score": 2}, "axis4": {"score": 2}},
+        {"axis1": {"score": -1}, "axis2": {"score": 1}, "axis3": {"score": 1}, "axis4": {"score": 1}},
+    ]  # 예상 결과: APGC (묵묵한 설계자)
 
     api_key = input("Upstage API 키를 입력하세요: ").strip()
     print("\nCareType 생성 중...\n")
