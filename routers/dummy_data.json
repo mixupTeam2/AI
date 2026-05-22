@@ -1,0 +1,67 @@
+[
+  {
+    "user_id": "user_001",
+    "week": 1,
+    "care_type": "APGC",
+    "care_type_name": "묵묵한 설계자",
+    "emotion": "불안",
+    "emotion_signal": "burnout",
+    "concern_keywords": ["자소서 공백기", "취업 방향 모름"],
+    "value_priority": ["근무지", "워라밸", "연봉"],
+    "value_changed": false,
+    "reframing": "비교가 됐다는 건 성장을 원한다는 신호예요",
+    "strength_keywords": ["자기주도성", "환경설계능력"]
+  },
+  {
+    "user_id": "user_002",
+    "week": 1,
+    "care_type": "EPGC",
+    "care_type_name": "열정적인 추진자",
+    "emotion": "의욕",
+    "emotion_signal": "recovery",
+    "concern_keywords": ["직무 확신 없음", "포트폴리오 부족"],
+    "value_priority": ["워라밸", "도메인", "기업규모"],
+    "value_changed": false,
+    "reframing": "의욕이 생겼다는 건 회복 신호예요",
+    "strength_keywords": ["목표지향성", "성실함"]
+  },
+  {
+    "user_id": "user_003",
+    "week": 1,
+    "care_type": "APRC",
+    "care_type_name": "인정받는 완벽주의자",
+    "emotion": "번아웃",
+    "emotion_signal": "burnout",
+    "concern_keywords": ["준비 기간 길어짐", "합격 불안"],
+    "value_priority": ["안정성", "근무지", "워라밸"],
+    "value_changed": false,
+    "reframing": "오래 준비했다는 건 그만큼 진지하다는 뜻이에요",
+    "strength_keywords": ["인내력", "꼼꼼함"]
+  },
+  {
+    "user_id": "user_004",
+    "week": 1,
+    "care_type": "APRS",
+    "care_type_name": "현실적인 조율자",
+    "emotion": "불안",
+    "emotion_signal": "burnout",
+    "concern_keywords": ["자소서 완성도", "경쟁자 비교"],
+    "value_priority": ["근무지", "연봉", "워라밸"],
+    "value_changed": false,
+    "reframing": "불안함은 더 잘하고 싶다는 마음의 표현이에요",
+    "strength_keywords": ["완벽주의", "자기성찰"]
+  },
+  {
+    "user_id": "user_005",
+    "week": 1,
+    "care_type": "EXGS",
+    "care_type_name": "네트워크형 모험가",
+    "emotion": "의욕",
+    "emotion_signal": "recovery",
+    "concern_keywords": ["스타트업 불안정성", "연봉 고민"],
+    "value_priority": ["도메인", "워라밸", "성장"],
+    "value_changed": true,
+    "reframing": "도전하려는 의욕이 느껴져요",
+    "strength_keywords": ["도전정신", "창의성"]
+  }
+]

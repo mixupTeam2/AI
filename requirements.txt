@@ -1,0 +1,7 @@
+requests
+fastapi
+uvicorn[standard]
+python-dotenv
+python-multipart
+neo4j
+langgraph
