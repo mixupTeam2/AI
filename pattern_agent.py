@@ -64,10 +64,10 @@ def run_pattern_agent(
 
     Returns:
         {
-          "axis1": {"score": 1, "detected": [...], "reason": "..."},  # E(+) vs B(-)
-          "axis2": {"score": -1, "detected": [...], "reason": "..."},  # C(+) vs D(-)
-          "axis3": {"score": 2, "detected": [...], "reason": "..."},  # S(+) vs I(-)
-          "axis4": {"score": 0, "detected": [...], "reason": "..."},  # G(+) vs P(-)
+          "axis1": {"score": 1, "detected": [...], "reason": "..."},   # E(+) vs A(-)
+          "axis2": {"score": -1, "detected": [...], "reason": "..."},  # P(+) vs X(-)
+          "axis3": {"score": 2, "detected": [...], "reason": "..."},   # G(+) vs R(-)
+          "axis4": {"score": 0, "detected": [...], "reason": "..."},   # C(+) vs S(-)
           "meta": {"user_id": ..., "week": ...}
         }
     """

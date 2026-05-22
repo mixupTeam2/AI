@@ -3,8 +3,6 @@ import json
 import requests
 from typing import Optional
 
-from rag.retriever import build_agent_rag_context
-
 SOLAR_API_URL = "https://api.upstage.ai/v1/solar/chat/completions"
 SOLAR_MODEL = "solar-pro3"
 

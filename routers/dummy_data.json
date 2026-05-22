@@ -1,62 +1,92 @@
 [
   {
     "user_id": "user_001",
-    "week": 1,
-    "care_type": "DE-R",
-    "emotion": "불안",
-    "emotion_signal": "burnout",
-    "concern_keywords": ["자소서 공백기", "취업 방향 모름"],
-    "value_priority": ["근무지", "워라밸", "연봉"],
-    "value_changed": false,
-    "reframing": "비교가 됐다는 건 성장을 원한다는 신호예요",
-    "strength_keywords": ["자기주도성", "환경설계능력"]
+    "spec": {
+      "gpa": 3.8,
+      "activities": ["대외활동", "인턴"],
+      "lab_experience": false,
+      "certifications": ["정보처리기사"]
+    },
+    "values_priority": ["근무지", "워라밸", "연봉", "도메인", "직무", "기업규모", "안정성"],
+    "retrospectives": [
+      {
+        "week": 1,
+        "keep": ["알람 없이 기상", "산책 30분"],
+        "hard": ["유튜브 보다 비교돼서 우울해짐", "자소서 한 줄도 못 씀"],
+        "try": ["음악 틀어놓고 공부해보기"]
+      }
+    ]
   },
   {
     "user_id": "user_002",
-    "week": 1,
-    "care_type": "ST-W",
-    "emotion": "의욕",
-    "emotion_signal": "recovery",
-    "concern_keywords": ["직무 확신 없음", "포트폴리오 부족"],
-    "value_priority": ["워라밸", "도메인", "기업규모"],
-    "value_changed": false,
-    "reframing": "의욕이 생겼다는 건 회복 신호예요",
-    "strength_keywords": ["목표지향성", "성실함"]
+    "spec": {
+      "gpa": 3.4,
+      "activities": ["데이터 분석 동아리"],
+      "lab_experience": false,
+      "certifications": ["ADsP"]
+    },
+    "values_priority": ["워라밸", "도메인", "직무", "안정성", "연봉", "근무지", "기업규모"],
+    "retrospectives": [
+      {
+        "week": 1,
+        "keep": ["관심 직무 공고 6개 정리", "포트폴리오 한 페이지 추가"],
+        "hard": ["내 경험이 직무 역량으로 보일지 걱정됨", "포트폴리오 완성도 부족"],
+        "try": ["공고별 요구 역량 표로 정리하기"]
+      }
+    ]
   },
   {
     "user_id": "user_003",
-    "week": 1,
-    "care_type": "PU-S",
-    "emotion": "번아웃",
-    "emotion_signal": "burnout",
-    "concern_keywords": ["준비 기간 길어짐", "합격 불안"],
-    "value_priority": ["안정성", "근무지", "워라밸"],
-    "value_changed": false,
-    "reframing": "오래 준비했다는 건 그만큼 진지하다는 뜻이에요",
-    "strength_keywords": ["인내력", "꼼꼼함"]
+    "spec": {
+      "gpa": 3.2,
+      "activities": ["공무원 스터디"],
+      "lab_experience": false,
+      "certifications": ["한국사"]
+    },
+    "values_priority": ["안정성", "근무지", "워라밸", "연봉", "도메인", "직무", "기업규모"],
+    "retrospectives": [
+      {
+        "week": 1,
+        "keep": ["하루 4시간 공부 유지"],
+        "hard": ["준비 기간이 너무 길어지는 것 같아 지침", "합격할 수 있을지 불안"],
+        "try": ["공부 시간 기록해서 성취감 찾기"]
+      }
+    ]
   },
   {
     "user_id": "user_004",
-    "week": 1,
-    "care_type": "DE-R",
-    "emotion": "불안",
-    "emotion_signal": "burnout",
-    "concern_keywords": ["자소서 완성도", "경쟁자 비교"],
-    "value_priority": ["근무지", "연봉", "워라밸"],
-    "value_changed": false,
-    "reframing": "불안함은 더 잘하고 싶다는 마음의 표현이에요",
-    "strength_keywords": ["완벽주의", "자기성찰"]
+    "spec": {
+      "gpa": 3.9,
+      "activities": ["교내 프로젝트", "해커톤"],
+      "lab_experience": true,
+      "certifications": ["SQLD", "정보처리기사"]
+    },
+    "values_priority": ["근무지", "연봉", "워라밸", "도메인", "직무", "기업규모", "안정성"],
+    "retrospectives": [
+      {
+        "week": 1,
+        "keep": ["자소서 3개 문항 완성"],
+        "hard": ["다른 사람 스펙 보면서 위축됨", "자소서 완성도가 부족한 것 같음"],
+        "try": ["SNS 사용 시간 줄이기"]
+      }
+    ]
   },
   {
     "user_id": "user_005",
-    "week": 1,
-    "care_type": "ST-W",
-    "emotion": "의욕",
-    "emotion_signal": "recovery",
-    "concern_keywords": ["스타트업 불안정성", "연봉 고민"],
-    "value_priority": ["도메인", "워라밸", "성장"],
-    "value_changed": true,
-    "reframing": "도전하려는 의욕이 느껴져요",
-    "strength_keywords": ["도전정신", "창의성"]
+    "spec": {
+      "gpa": 3.5,
+      "activities": ["스타트업 인턴", "사이드 프로젝트"],
+      "lab_experience": false,
+      "certifications": []
+    },
+    "values_priority": ["도메인", "워라밸", "직무", "안정성", "연봉", "기업규모", "근무지"],
+    "retrospectives": [
+      {
+        "week": 1,
+        "keep": ["스타트업 공고 10개 탐색"],
+        "hard": ["스타트업 불안정성이 걱정됨", "연봉 기준을 어떻게 잡아야 할지 모르겠음"],
+        "try": ["스타트업 재직자 커피챗 신청해보기"]
+      }
+    ]
   }
 ]

@@ -1,15 +1,15 @@
-import os
 import json
+import os
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, TypedDict
-from langgraph.graph import StateGraph, END
+
+from langgraph.graph import END, StateGraph
 
 from analysis_agent import run_analysis_agent
-from reframing_agent import run_reframing_agent
 from pattern_agent import run_pattern_agent
+from reframing_agent import run_reframing_agent
 from values_agent import run_values_agent
-from type_agent import run_type_agent
 
 SOLAR_API_URL = "https://api.upstage.ai/v1/solar/chat/completions"
 SOLAR_MODEL = "solar-pro3"
@@ -21,20 +21,20 @@ KHT 회고를 읽고 어떤 에이전트를 어떤 순서로 실행할지 결정
 사용 가능한 에이전트는 정확히 아래 4개뿐입니다. 이 외의 에이전트는 절대 사용하지 마세요:
 - analysis: 감정·맥락 분류, 번아웃 신호 판단
 - reframing: Hard 항목을 강점 언어로 전환, 즉각 피드백
-- pattern: CareType 4축 점수 채점 (E/A, P/X, G/R, C/S) — 매주 실행
+- pattern: CareType 4축 점수 채점 (E/A, P/X, G/R, C/S) — 매주 반드시 실행
 - values: 가치관 변화 감지, 우선순위 업데이트 제안
 
 판단 기준:
-- Hard 항목 감정 강도가 높으면 → reframing을 먼저
-- 번아웃 위험이 보이면 → analysis + pattern 우선
+- pattern은 매주 항상 first_agents에 포함 (CareType 점수 누적용)
+- Hard 항목 감정 강도가 높으면 → reframing을 first_agents에 포함
+- 번아웃 위험이 보이면 → analysis를 first_agents에 포함
 - 가치관 혼란 신호가 있으면 → values 포함
-- pattern은 매주 항상 실행 (CareType 점수 누적용)
 
 반드시 아래 JSON만 반환하세요:
 {
   "reasoning": "판단 근거 한 줄",
-  "first_agents": ["analysis" | "reframing" | "pattern" | "values"],
-  "second_agents": ["analysis" | "reframing" | "pattern" | "values"],
+  "first_agents": ["analysis", "reframing", "pattern", "values" 중 선택],
+  "second_agents": ["analysis", "reframing", "pattern", "values" 중 선택],
   "skip": []
 }"""
 
@@ -46,7 +46,7 @@ ADJUST_PROMPT = """당신은 취업준비생 케어 시스템의 오케스트레
 반드시 아래 JSON만 반환하세요:
 {
   "reasoning": "판단 근거 한 줄",
-  "add_agents": ["analysis" | "reframing" | "pattern" | "values"],
+  "add_agents": ["analysis", "reframing", "pattern", "values" 중 선택],
   "context_injection": "다음 에이전트에 전달할 핵심 컨텍스트 한 줄 (없으면 null)"
 }"""
 
@@ -70,7 +70,6 @@ class AgentState(TypedDict):
     hard: list[str]
     try_: list[str]
     current_priority: dict
-    axis_scores_history: list
     api_key: str
     rag_context: Optional[str]
     user_id: Optional[str]
@@ -84,7 +83,6 @@ class AgentState(TypedDict):
     pattern: dict
     values: dict
     supervisor: dict
-    care_type: dict
     errors: dict
 
 
@@ -113,7 +111,12 @@ def _parse_json(raw: str) -> dict:
 
 
 def _run_agent(name: str, state: AgentState, context: Optional[str]) -> dict:
-    common = dict(api_key=state["api_key"], rag_context=context, user_id=state["user_id"], week=state["week"])
+    common = dict(
+        api_key=state["api_key"],
+        rag_context=context,
+        user_id=state["user_id"],
+        week=state["week"],
+    )
     if name == "analysis":
         return run_analysis_agent(state["keep"], state["hard"], state["try_"], **common)
     if name == "reframing":
@@ -121,12 +124,15 @@ def _run_agent(name: str, state: AgentState, context: Optional[str]) -> dict:
     if name == "pattern":
         return run_pattern_agent(state["keep"], state["hard"], state["try_"], **common)
     if name == "values":
-        return run_values_agent(state["keep"], state["hard"], state["try_"], state["current_priority"], **common)
+        return run_values_agent(
+            state["keep"], state["hard"], state["try_"], state["current_priority"], **common
+        )
     raise ValueError(f"알 수 없는 에이전트: {name}")
 
 
 def _run_parallel(names: list[str], state: AgentState, context: Optional[str]) -> dict:
-    results, errors = {}, {}
+    results: dict = {}
+    errors: dict = {}
     if not names:
         return results
     with ThreadPoolExecutor(max_workers=len(names)) as executor:
@@ -135,9 +141,9 @@ def _run_parallel(names: list[str], state: AgentState, context: Optional[str]) -
             name = futures[future]
             try:
                 results[name] = future.result()
-            except Exception as e:
-                errors[name] = str(e)
-                print(f"[{name}] 에러: {e}")
+            except Exception as exc:
+                errors[name] = str(exc)
+                print(f"[{name}] 에러: {exc}")
     if errors:
         results["_errors"] = errors
     return results
@@ -150,16 +156,29 @@ def plan_node(state: AgentState) -> dict:
     kht_summary = (
         f"Keep: {', '.join(state['keep']) or '없음'}\n"
         f"Hard: {', '.join(state['hard']) or '없음'}\n"
-        f"Try: {', '.join(state['try_']) or '없음'}\n"
-        f"누적 주차 수: {len(state['axis_scores_history'])}"
+        f"Try: {', '.join(state['try_']) or '없음'}"
     )
     plan = _parse_json(_call_solar([
         {"role": "system", "content": PLAN_PROMPT},
         {"role": "user", "content": kht_summary},
     ], state["api_key"]))
-    print(f"      → {plan['reasoning']}")
+
+    # pattern은 LLM 응답과 무관하게 항상 first_agents에 보장
+    first = [a for a in plan.get("first_agents", []) if a in VALID_AGENTS]
+    second = [a for a in plan.get("second_agents", []) if a in VALID_AGENTS]
+    if "pattern" not in first and "pattern" not in second:
+        first = ["pattern"] + first
+    plan["first_agents"] = first
+    plan["second_agents"] = second
+
+    print(f"      → {plan.get('reasoning', '')}")
     print(f"      → 1차: {plan['first_agents']} / 2차: {plan['second_agents']}")
-    return {"plan": plan, "context": state.get("rag_context"), "executed_agents": [], "errors": {}}
+    return {
+        "plan": plan,
+        "context": state.get("rag_context"),
+        "executed_agents": [],
+        "errors": {},
+    }
 
 
 def run_first_node(state: AgentState) -> dict:
@@ -167,6 +186,7 @@ def run_first_node(state: AgentState) -> dict:
     print(f"[2/5] 1차 에이전트 실행 중: {first_agents}")
     results = _run_parallel(first_agents, state, state.get("context"))
 
+    # analysis 결과를 컨텍스트에 주입해 2차 에이전트 품질 향상
     analysis = results.get("analysis", {})
     context = state.get("context")
     if analysis:
@@ -195,7 +215,7 @@ def adjust_node(state: AgentState) -> dict:
             f"2차 예정 에이전트: {state['plan'].get('second_agents', [])}"
         )},
     ], state["api_key"]))
-    print(f"      → {adjustment['reasoning']}")
+    print(f"      → {adjustment.get('reasoning', '')}")
 
     context = state.get("context")
     if adjustment.get("context_injection"):
@@ -208,7 +228,10 @@ def run_second_node(state: AgentState) -> dict:
     second_agents = list(dict.fromkeys(
         state["plan"].get("second_agents", []) + state["adjustment"].get("add_agents", [])
     ))
-    second_agents = [a for a in second_agents if a in VALID_AGENTS and a not in state["executed_agents"]]
+    second_agents = [
+        a for a in second_agents
+        if a in VALID_AGENTS and a not in state["executed_agents"]
+    ]
     print(f"[4/5] 2차 에이전트 실행 중: {second_agents}")
     results = _run_parallel(second_agents, state, state.get("context"))
     return {
@@ -228,13 +251,6 @@ def synthesize_node(state: AgentState) -> dict:
     return {"supervisor": supervisor}
 
 
-def type_node(state: AgentState) -> dict:
-    print("[CareType] 10주 누적 → CareType 생성 중...")
-    all_scores = state["axis_scores_history"] + [state.get("pattern", {})]
-    care_type = run_type_agent(all_scores, api_key=state["api_key"], user_id=state["user_id"])
-    return {"care_type": care_type}
-
-
 # ── 조건 엣지 ──────────────────────────────────────────────────────────
 
 def route_after_adjust(state: AgentState) -> str:
@@ -245,35 +261,28 @@ def route_after_adjust(state: AgentState) -> str:
     return "run_second" if second else "synthesize"
 
 
-def route_after_synthesize(state: AgentState) -> str:
-    all_scores = state["axis_scores_history"] + [state.get("pattern", {})]
-    return "type" if len(all_scores) >= 10 else END
-
-
 # ── 그래프 빌드 ────────────────────────────────────────────────────────
 
 def _build_graph():
     workflow = StateGraph(AgentState)
+
     workflow.add_node("plan", plan_node)
     workflow.add_node("run_first", run_first_node)
     workflow.add_node("adjust", adjust_node)
     workflow.add_node("run_second", run_second_node)
     workflow.add_node("synthesize", synthesize_node)
-    workflow.add_node("type", type_node)
 
     workflow.set_entry_point("plan")
     workflow.add_edge("plan", "run_first")
     workflow.add_edge("run_first", "adjust")
-    workflow.add_conditional_edges("adjust", route_after_adjust, {
-        "run_second": "run_second",
-        "synthesize": "synthesize",
-    })
+    workflow.add_conditional_edges(
+        "adjust",
+        route_after_adjust,
+        {"run_second": "run_second", "synthesize": "synthesize"},
+    )
     workflow.add_edge("run_second", "synthesize")
-    workflow.add_conditional_edges("synthesize", route_after_synthesize, {
-        "type": "type",
-        END: END,
-    })
-    workflow.add_edge("type", END)
+    workflow.add_edge("synthesize", END)
+
     return workflow.compile()
 
 
@@ -287,26 +296,34 @@ def run_pipeline(
     hard: list[str],
     try_: list[str],
     current_priority: dict,
-    axis_scores_history: list,
     api_key: Optional[str] = None,
     rag_context: Optional[str] = None,
     user_id: Optional[str] = None,
     week: Optional[int] = None,
 ) -> dict:
-    key = api_key or os.environ.get("UPSTAGE_API_KEY")
+    key = api_key or os.environ.get("SOLAR_API_KEY") or os.environ.get("UPSTAGE_API_KEY")
     if not key:
         raise ValueError("API 키가 필요합니다.")
 
     initial_state: AgentState = {
-        "keep": keep, "hard": hard, "try_": try_,
+        "keep": keep,
+        "hard": hard,
+        "try_": try_,
         "current_priority": current_priority,
-        "axis_scores_history": axis_scores_history,
-        "api_key": key, "rag_context": rag_context,
-        "user_id": user_id, "week": week,
-        "plan": {}, "adjustment": {}, "context": rag_context,
+        "api_key": key,
+        "rag_context": rag_context,
+        "user_id": user_id,
+        "week": week,
+        "plan": {},
+        "adjustment": {},
+        "context": rag_context,
         "executed_agents": [],
-        "analysis": {}, "reframing": {}, "pattern": {},
-        "values": {}, "supervisor": {}, "care_type": {}, "errors": {},
+        "analysis": {},
+        "reframing": {},
+        "pattern": {},
+        "values": {},
+        "supervisor": {},
+        "errors": {},
     }
 
     final_state = _graph.invoke(initial_state)
@@ -315,17 +332,9 @@ def run_pipeline(
     result["orchestrator_plan"] = final_state.get("plan", {})
     result["orchestrator_adjustment"] = final_state.get("adjustment", {})
 
-    if final_state.get("care_type"):
-        result["care_type"] = final_state["care_type"]
-    else:
-        all_scores = axis_scores_history + [final_state.get("pattern", {})]
-        result["care_type"] = {
-            "is_complete": False,
-            "weeks_accumulated": len(all_scores),
-            "weeks_remaining": max(0, 10 - len(all_scores)),
-        }
     if final_state.get("errors"):
         result["errors"] = final_state["errors"]
+
     return result
 
 
@@ -343,7 +352,6 @@ if __name__ == "__main__":
     result = run_pipeline(
         sample_keep, sample_hard, sample_try,
         current_priority=sample_priority,
-        axis_scores_history=[],
         api_key=api_key,
         user_id="test_user_01",
         week=1,

@@ -1,306 +1,318 @@
 import json
-from pathlib import Path
-from typing import Any
-
+import os
 from graph.schema import run_query
 
 
-def _as_list(value: Any) -> list[Any]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    return [value]
+def save_user_onboarding(user: dict):
+    """온보딩 데이터 (스펙 + 가치관) Neo4j에 저장"""
 
-
-def _priority_list(value_priority: Any) -> list[str]:
-    if isinstance(value_priority, dict):
-        return [
-            value
-            for value, _ in sorted(value_priority.items(), key=lambda item: item[1])
-        ]
-    return [str(value) for value in _as_list(value_priority) if value]
-
-
-def _json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, default=str)
-
-
-def _dedupe_strings(values: list[Any], limit: int = 40) -> list[str]:
-    seen = set()
-    result = []
-    for value in values:
-        if value is None:
-            continue
-        text = str(value).strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        result.append(text)
-        if len(result) >= limit:
-            break
-    return result
-
-
-def save_user_report(report: dict[str, Any]) -> None:
-    """Save one weekly report plus searchable graph facts into Neo4j."""
-    user_id = report["user_id"]
-    week = report["week"]
-    value_priority = _priority_list(report.get("value_priority"))
-    concerns = _dedupe_strings(_as_list(report.get("concern_keywords")))
-    strengths = _dedupe_strings(_as_list(report.get("strength_keywords")))
-    graph_tags = _dedupe_strings(_as_list(report.get("graph_tags")))
-
-    run_query(
-        """
+    run_query("""
         MERGE (u:User {user_id: $user_id})
-        SET u.latest_week = CASE
-            WHEN u.latest_week IS NULL OR u.latest_week < $week THEN $week
-            ELSE u.latest_week
-        END
-        WITH u
-        MERGE (r:WeeklyReport {user_id: $user_id, week: $week})
-        SET
-            r.keep = $keep,
-            r.hard = $hard,
-            r.try_next = $try_next,
-            r.summary = $summary,
-            r.emotion = $emotion,
-            r.emotion_signal = $emotion_signal,
-            r.burnout_signal = $burnout_signal,
-            r.recovery_signal = $recovery_signal,
-            r.reframing = $reframing,
-            r.value_changed = $value_changed,
-            r.value_change_message = $value_change_message,
-            r.care_type = $care_type,
-            r.axis_scores_json = $axis_scores_json,
-            r.type_result_json = $type_result_json,
-            r.supervisor_json = $supervisor_json,
-            r.agent_json = $agent_json,
-            r.ui_summary_json = $ui_summary_json,
-            r.graph_tags = $graph_tags
-        MERGE (u)-[:SUBMITTED]->(r)
-        """,
-        {
+        SET u.gpa = $gpa,
+            u.lab_experience = $lab_experience,
+            u.latest_week = 0
+    """, {
+        "user_id": user["user_id"],
+        "gpa": user["spec"].get("gpa", 0),
+        "lab_experience": user["spec"].get("lab_experience", False),
+    })
+
+    for idx, value in enumerate(user["values_priority"]):
+        run_query("""
+            MERGE (v:Value {name: $value})
+            WITH v
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:PRIORITIZES]->(v)
+            SET r.priority = $priority, r.week = 0
+        """, {
+            "value": value,
+            "user_id": user["user_id"],
+            "priority": idx + 1,
+        })
+
+    print(f"온보딩 저장 완료: {user['user_id']}")
+
+
+def save_weekly_retrospective(user_id: str, week: int, retro: dict):
+    """주간 KHT 회고 항목을 Keep/Hard/Try 노드로 Neo4j에 저장"""
+
+    run_query("""
+        MATCH (u:User {user_id: $user_id})
+        SET u.latest_week = CASE WHEN $week > coalesce(u.latest_week, 0) THEN $week ELSE u.latest_week END
+    """, {"user_id": user_id, "week": week})
+
+    for item in retro.get("keep", []):
+        run_query("""
+            MERGE (k:Keep {text: $text})
+            WITH k
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:KEPT]->(k)
+            SET r.week = $week
+        """, {"text": item, "user_id": user_id, "week": week})
+
+    for item in retro.get("hard", []):
+        run_query("""
+            MERGE (h:Hard {text: $text})
+            WITH h
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:STRUGGLED]->(h)
+            SET r.week = $week
+        """, {"text": item, "user_id": user_id, "week": week})
+
+    for item in retro.get("try", []):
+        run_query("""
+            MERGE (t:Try {text: $text})
+            WITH t
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:TRIED]->(t)
+            SET r.week = $week
+        """, {"text": item, "user_id": user_id, "week": week})
+
+    print(f"  KHT 저장 완료: {user_id} - {week}주차")
+
+
+def save_analysis_result(user_id: str, week: int, analysis: dict):
+    """analysis_agent / reframing_agent 결과를 Neo4j에 저장"""
+
+    emotion = analysis.get("emotion", {}).get("primary")
+    if emotion:
+        run_query("""
+            MERGE (e:Emotion {name: $emotion})
+            WITH e
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:FEELS]->(e)
+            SET r.week = $week,
+                r.signal = $signal,
+                r.intensity = $intensity
+        """, {
+            "emotion": emotion,
             "user_id": user_id,
             "week": week,
-            "keep": _as_list(report.get("keep")),
-            "hard": _as_list(report.get("hard")),
-            "try_next": _as_list(report.get("try_next") or report.get("try")),
-            "summary": report.get("summary"),
-            "emotion": report.get("emotion"),
-            "emotion_signal": report.get("emotion_signal"),
-            "burnout_signal": report.get("burnout_signal"),
-            "recovery_signal": report.get("recovery_signal"),
-            "reframing": report.get("reframing"),
-            "value_changed": bool(report.get("value_changed", False)),
-            "value_change_message": report.get("value_change_message"),
-            "care_type": report.get("care_type"),
-            "axis_scores_json": _json(report.get("axis_scores")),
-            "type_result_json": _json(report.get("type_result")),
-            "supervisor_json": _json(report.get("supervisor", {})),
-            "agent_json": _json(report.get("agent_results", {})),
-            "ui_summary_json": _json(report.get("ui_summary", {})),
-            "graph_tags": graph_tags,
-        },
-    )
+            "signal": analysis.get("burnout_signal", ""),
+            "intensity": analysis.get("emotion", {}).get("intensity", ""),
+        })
 
-    if report.get("care_type"):
-        run_query(
-            """
+    for tag in analysis.get("graph_tags", []):
+        run_query("""
+            MERGE (c:Concern {name: $tag})
+            WITH c
             MATCH (u:User {user_id: $user_id})
-            MERGE (c:CareType {code: $code})
-            MERGE (u)-[r:HAS_TYPE]->(c)
-            SET r.week = $week
-            """,
-            {"code": report["care_type"], "user_id": user_id, "week": week},
-        )
-
-    if report.get("emotion"):
-        run_query(
-            """
-            MATCH (u:User {user_id: $user_id})
-            MERGE (e:Emotion {name: $emotion})
-            MERGE (u)-[r:FEELS]->(e)
-            SET
-                r.week = $week,
-                r.signal = $emotion_signal,
-                r.burnout_signal = $burnout_signal,
-                r.recovery_signal = $recovery_signal
-            """,
-            {
-                "emotion": report.get("emotion"),
-                "user_id": user_id,
-                "week": week,
-                "emotion_signal": report.get("emotion_signal"),
-                "burnout_signal": report.get("burnout_signal"),
-                "recovery_signal": report.get("recovery_signal"),
-            },
-        )
-
-    for idx, value in enumerate(value_priority):
-        run_query(
-            """
-            MATCH (u:User {user_id: $user_id})
-            MERGE (v:Value {name: $value})
-            MERGE (u)-[r:PRIORITIZES]->(v)
-            SET r.priority = $priority, r.week = $week
-            """,
-            {
-                "value": value,
-                "user_id": user_id,
-                "priority": idx + 1,
-                "week": week,
-            },
-        )
-
-    for concern in concerns:
-        run_query(
-            """
-            MATCH (u:User {user_id: $user_id})
-            MERGE (c:Concern {name: $concern})
             MERGE (u)-[r:WORRIES_ABOUT]->(c)
             SET r.week = $week
-            """,
-            {"concern": concern, "user_id": user_id, "week": week},
-        )
+        """, {"tag": tag, "user_id": user_id, "week": week})
 
-    for strength in strengths:
-        run_query(
-            """
-            MATCH (u:User {user_id: $user_id})
-            MERGE (s:Strength {name: $strength})
-            MERGE (u)-[r:SHOWS_STRENGTH]->(s)
-            SET r.week = $week
-            """,
-            {"strength": strength, "user_id": user_id, "week": week},
-        )
-
-    for tag in graph_tags:
-        run_query(
-            """
-            MATCH (u:User {user_id: $user_id})
-            MERGE (t:GraphTag {name: $tag})
-            MERGE (u)-[r:HAS_TAG]->(t)
-            SET r.week = $week
-            """,
-            {"tag": tag, "user_id": user_id, "week": week},
-        )
+    print(f"  분석 결과 저장 완료: {user_id} - {week}주차")
 
 
-def _collect_strengths(reframing: dict[str, Any]) -> list[str]:
-    strengths = []
-    for item in _as_list(reframing.get("reframing")):
-        if isinstance(item, dict):
-            strengths.extend(_as_list(item.get("strength_keywords")))
-    strengths.extend(_as_list(reframing.get("strength_keywords")))
-    return _dedupe_strings(strengths)
+def save_care_type(user_id: str, care_type: dict):
+    """CareType 코드 Neo4j에 저장 (10주 누적 후)"""
+    code = care_type.get("code")
+    if not code:
+        return
+
+    run_query("""
+        MERGE (c:CareType {code: $code})
+        SET c.type_name = $type_name
+        WITH c
+        MATCH (u:User {user_id: $user_id})
+        MERGE (u)-[r:HAS_TYPE]->(c)
+        SET r.week = $week
+    """, {
+        "code": code,
+        "type_name": care_type.get("type_name", ""),
+        "user_id": user_id,
+        "week": care_type.get("weeks_accumulated", 0),
+    })
+
+    print(f"CareType 저장 완료: {user_id} → {code}")
 
 
-def _collect_graph_tags(results: dict[str, Any]) -> list[str]:
-    analysis = results.get("analysis") or {}
-    reframing = results.get("reframing") or {}
-    pattern = results.get("pattern") or {}
-    values = results.get("values") or {}
-    supervisor = results.get("supervisor") or {}
-    care_type = results.get("care_type") or {}
+def save_user_report(report: dict):
+    """
+    B팀 WeeklyReport 스키마 데이터를 Neo4j에 저장.
+    routers/graph.py의 POST /api/graph/save 엔드포인트에서 호출.
+    """
+    user_id = report["user_id"]
+    week = report["week"]
 
-    tags: list[Any] = []
-    tags.extend(_as_list(analysis.get("graph_tags")))
-    tags.extend(_as_list(reframing.get("graph_keywords")))
-    tags.extend(_as_list(values.get("graph_tags")))
-    tags.extend(_as_list(values.get("changed_values")))
-    tags.append((analysis.get("emotion") or {}).get("primary"))
-    tags.append((analysis.get("context") or {}).get("domain"))
-    tags.append(supervisor.get("care_point"))
-    tags.append(care_type.get("code"))
+    run_query("""
+        MERGE (r:WeeklyReport {user_id: $user_id, week: $week})
+        SET r.emotion        = $emotion,
+            r.emotion_signal = $emotion_signal,
+            r.reframing      = $reframing,
+            r.value_changed  = $value_changed,
+            r.care_type      = $care_type
+        WITH r
+        MATCH (u:User {user_id: $user_id})
+        MERGE (u)-[:SUBMITTED]->(r)
+        SET u.latest_week = CASE WHEN $week > coalesce(u.latest_week, 0) THEN $week ELSE u.latest_week END
+    """, {
+        "user_id": user_id,
+        "week": week,
+        "emotion": report.get("emotion", ""),
+        "emotion_signal": report.get("emotion_signal", ""),
+        "reframing": report.get("reframing", ""),
+        "value_changed": report.get("value_changed", False),
+        "care_type": report.get("care_type"),
+    })
 
-    for axis_key in ("axis1", "axis2", "axis3", "axis4"):
-        axis = pattern.get(axis_key) or {}
-        tags.extend(_as_list(axis.get("detected")))
+    for keyword in report.get("concern_keywords", []):
+        run_query("""
+            MERGE (c:Concern {name: $keyword})
+            WITH c
+            MATCH (r:WeeklyReport {user_id: $user_id, week: $week})
+            MERGE (r)-[:HAS_CONCERN]->(c)
+        """, {"keyword": keyword, "user_id": user_id, "week": week})
 
-    return _dedupe_strings(tags)
+    for keyword in report.get("strength_keywords", []):
+        run_query("""
+            MERGE (s:Strength {name: $keyword})
+            WITH s
+            MATCH (r:WeeklyReport {user_id: $user_id, week: $week})
+            MERGE (r)-[:HAS_STRENGTH]->(s)
+        """, {"keyword": keyword, "user_id": user_id, "week": week})
 
+    if report.get("value_changed") and report.get("value_priority"):
+        for idx, value in enumerate(report["value_priority"]):
+            run_query("""
+                MATCH (u:User {user_id: $user_id})
+                MERGE (v:Value {name: $value})
+                MERGE (u)-[r:PRIORITIZES]->(v)
+                SET r.priority = $priority, r.week = $week
+            """, {"user_id": user_id, "value": value, "priority": idx + 1, "week": week})
 
-def _collect_concerns(results: dict[str, Any]) -> list[str]:
-    analysis = results.get("analysis") or {}
-    values = results.get("values") or {}
-    supervisor = results.get("supervisor") or {}
-    context = analysis.get("context") or {}
-    return _dedupe_strings(
-        [
-            context.get("domain"),
-            context.get("trigger"),
-            supervisor.get("care_point"),
-            *(_as_list(values.get("changed_values"))),
-        ]
-    )
+    print(f"  WeeklyReport 저장 완료: {user_id} - {week}주차")
 
 
 def save_pipeline_result(
     user_id: str,
     week: int,
-    keep: list[str],
-    hard: list[str],
-    try_: list[str],
-    current_priority: dict[str, int] | list[str],
-    results: dict[str, Any],
+    keep: list,
+    hard: list,
+    try_: list,
+    result: dict,
 ) -> None:
-    """Convert multi-agent output into graph facts and persist it."""
-    analysis = results.get("analysis") or {}
-    reframing = results.get("reframing") or {}
-    values = results.get("values") or {}
-    pattern = results.get("pattern") or {}
-    supervisor = results.get("supervisor") or {}
-    care_type = results.get("care_type") or {}
-    ui_summary = results.get("ui_summary") or {}
+    """
+    A팀 파이프라인 전체 결과를 Neo4j WeeklyReport 노드로 저장.
+    route.py의 POST /api/retrospective 엔드포인트에서 호출.
+    """
+    analysis = result.get("analysis", {})
+    reframing = result.get("reframing", {})
+    values = result.get("values", {})
+    pattern = result.get("pattern", {})
+    care_type = result.get("care_type", {})
 
-    emotion = analysis.get("emotion") or {}
-    report = {
+    axis_scores = {k: pattern.get(k, {}) for k in ["axis1", "axis2", "axis3", "axis4"]}
+    graph_tags = analysis.get("graph_tags", [])
+
+    # WeeklyReport 노드 생성 (keep/hard/try_next 포함하여 get_user_history 쿼리 호환)
+    run_query("""
+        MERGE (r:WeeklyReport {user_id: $user_id, week: $week})
+        SET r.keep                 = $keep,
+            r.hard                 = $hard,
+            r.try_next             = $try_next,
+            r.emotion              = $emotion,
+            r.burnout_signal       = $burnout_signal,
+            r.recovery_signal      = $recovery_signal,
+            r.summary              = $summary,
+            r.graph_tags           = $graph_tags,
+            r.reframing            = $reframing,
+            r.value_change_message = $value_change_message,
+            r.axis_scores_json     = $axis_scores_json,
+            r.care_type            = $care_type_code
+        WITH r
+        MATCH (u:User {user_id: $user_id})
+        MERGE (u)-[:SUBMITTED]->(r)
+        SET u.latest_week = CASE WHEN $week > coalesce(u.latest_week, 0) THEN $week ELSE u.latest_week END
+    """, {
         "user_id": user_id,
         "week": week,
-        "care_type": care_type.get("code") or supervisor.get("care_type"),
         "keep": keep,
         "hard": hard,
         "try_next": try_,
-        "emotion": emotion.get("primary"),
-        "emotion_signal": emotion.get("intensity"),
-        "burnout_signal": analysis.get("burnout_signal") or reframing.get("burnout_signal"),
-        "recovery_signal": analysis.get("recovery_signal"),
-        "concern_keywords": _collect_concerns(results),
-        "value_priority": current_priority,
-        "value_changed": bool(values.get("change_detected")),
+        "emotion": analysis.get("emotion", {}).get("primary", ""),
+        "burnout_signal": analysis.get("burnout_signal", ""),
+        "recovery_signal": analysis.get("recovery_signal", ""),
+        "summary": analysis.get("summary", ""),
+        "graph_tags": graph_tags,
+        "reframing": reframing.get("overall_message", ""),
         "value_change_message": values.get("update_message"),
-        "reframing": reframing.get("overall_message"),
-        "strength_keywords": _collect_strengths(reframing),
-        "summary": analysis.get("summary") or supervisor.get("main_message"),
-        "axis_scores": pattern,
-        "type_result": care_type,
-        "graph_tags": _collect_graph_tags(results),
-        "supervisor": supervisor,
-        "ui_summary": ui_summary,
-        "agent_results": {
-            "analysis": analysis,
-            "reframing": reframing,
-            "pattern": pattern,
-            "values": values,
-            "care_type": care_type,
-        },
-    }
-    save_user_report(report)
+        "axis_scores_json": json.dumps(axis_scores, ensure_ascii=False),
+        "care_type_code": care_type.get("code") if care_type.get("is_complete") else None,
+    })
+
+    # 감정 노드
+    emotion_name = analysis.get("emotion", {}).get("primary")
+    if emotion_name:
+        run_query("""
+            MERGE (e:Emotion {name: $emotion})
+            WITH e
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:FEELS]->(e)
+            SET r.week = $week,
+                r.signal = $signal,
+                r.intensity = $intensity
+        """, {
+            "emotion": emotion_name,
+            "user_id": user_id,
+            "week": week,
+            "signal": analysis.get("burnout_signal", ""),
+            "intensity": analysis.get("emotion", {}).get("intensity", ""),
+        })
+
+    # GraphTag + Concern 노드
+    for tag in graph_tags:
+        run_query("""
+            MERGE (t:GraphTag {name: $tag})
+            WITH t
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:HAS_TAG]->(t)
+            SET r.week = $week
+        """, {"tag": tag, "user_id": user_id, "week": week})
+
+        run_query("""
+            MERGE (c:Concern {name: $tag})
+            WITH c
+            MATCH (u:User {user_id: $user_id})
+            MERGE (u)-[r:WORRIES_ABOUT]->(c)
+            SET r.week = $week
+        """, {"tag": tag, "user_id": user_id, "week": week})
+
+    # 강점 키워드 (reframing 결과)
+    for item in reframing.get("reframing", []):
+        for keyword in item.get("strength_keywords", []):
+            run_query("""
+                MERGE (s:Strength {name: $keyword})
+                WITH s
+                MATCH (u:User {user_id: $user_id})
+                MERGE (u)-[r:HAS_STRENGTH]->(s)
+                SET r.week = $week
+            """, {"keyword": keyword, "user_id": user_id, "week": week})
+
+    print(f"  파이프라인 결과 저장 완료: {user_id} - {week}주차")
 
 
-def load_dummy_data() -> None:
-    dummy_path = Path(__file__).resolve().parents[1] / "routers" / "dummy_data.json"
-    with dummy_path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+def load_dummy_data():
+    """더미 데이터 전체를 Neo4j에 저장 (온보딩 + KHT 항목)"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dummy_path = os.path.join(base_dir, "routers", "dummy_data.json")
 
-    print(f"Saving {len(data)} dummy reports...")
-    for report in data:
-        save_user_report(report)
-    print("\nDummy data saved.")
+    with open(dummy_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    print(f"총 {len(data)}명 저장 시작...\n")
+
+    for user in data:
+        save_user_onboarding(user)
+
+        for retro in user.get("retrospectives", []):
+            save_weekly_retrospective(
+                user_id=user["user_id"],
+                week=retro["week"],
+                retro=retro,
+            )
+
+    print("\n더미 데이터 저장 완료!")
 
 
 if __name__ == "__main__":

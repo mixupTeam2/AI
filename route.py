@@ -6,7 +6,8 @@ import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from graph.queries import get_axis_scores_history, get_current_value_priority
+from graph.pipeline import save_pipeline_result
+from graph.queries import get_current_value_priority
 from graph.schema import run_query
 from orchestrator import run_pipeline
 from rag.retriever import find_similar_users
@@ -52,7 +53,6 @@ class RetrospectiveRequest(BaseModel):
     hard: list[str] = Field(..., description="힘들었던 것")
     try_next: list[str] = Field(..., alias="try", description="다음 주 시도할 것")
     values_priority: Optional[list[str]] = None
-    axis_scores_history: Optional[list[dict]] = None
 
     class Config:
         populate_by_name = True
@@ -82,17 +82,6 @@ def _load_current_priority(user_id: str) -> dict[str, int]:
         return priority or _default_priority()
     except Exception:
         return _default_priority()
-
-
-def _load_axis_scores_history(user_id: str, before_week: int) -> list[dict]:
-    try:
-        return [
-            item
-            for item in get_axis_scores_history(user_id, limit=12)
-            if item.get("week") is None or item["week"] < before_week
-        ]
-    except Exception:
-        return []
 
 
 def _save_onboarding_to_graph(req: OnboardingRequest) -> None:
@@ -174,11 +163,6 @@ def submit_retrospective(req: RetrospectiveRequest):
         if req.values_priority
         else _load_current_priority(req.user_id)
     )
-    axis_scores_history = (
-        req.axis_scores_history
-        if req.axis_scores_history is not None
-        else _load_axis_scores_history(req.user_id, req.week)
-    )
 
     try:
         result = run_pipeline(
@@ -186,7 +170,6 @@ def submit_retrospective(req: RetrospectiveRequest):
             hard=req.hard,
             try_=req.try_next,
             current_priority=current_priority,
-            axis_scores_history=axis_scores_history,
             api_key=API_KEY,
             user_id=req.user_id,
             week=req.week,
@@ -197,11 +180,32 @@ def submit_retrospective(req: RetrospectiveRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return {
+    # 파이프라인 결과를 Neo4j에 저장 (실패해도 응답은 정상 반환)
+    graph_saved = True
+    graph_error = None
+    try:
+        save_pipeline_result(
+            user_id=req.user_id,
+            week=req.week,
+            keep=req.keep,
+            hard=req.hard,
+            try_=req.try_next,
+            result=result,
+        )
+    except Exception as exc:
+        graph_saved = False
+        graph_error = str(exc)
+        print(f"[Neo4j] 저장 실패: {exc}")
+
+    response_payload = {
         "user_id": req.user_id,
         "week": req.week,
         "result": result,
+        "graph_saved": graph_saved,
     }
+    if graph_error:
+        response_payload["graph_error"] = graph_error
+    return response_payload
 
 
 @router.get("/recommend/{user_id}", summary="유사 유저 3명 추천 (Graph DB RAG)")
