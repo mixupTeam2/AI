@@ -136,14 +136,13 @@ def save_user_report(report: dict):
     week = report["week"]
 
     run_query("""
+        MERGE (u:User {user_id: $user_id})
         MERGE (r:WeeklyReport {user_id: $user_id, week: $week})
         SET r.emotion        = $emotion,
             r.emotion_signal = $emotion_signal,
             r.reframing      = $reframing,
             r.value_changed  = $value_changed,
             r.care_type      = $care_type
-        WITH r
-        MATCH (u:User {user_id: $user_id})
         MERGE (u)-[:SUBMITTED]->(r)
         SET u.latest_week = CASE WHEN $week > coalesce(u.latest_week, 0) THEN $week ELSE u.latest_week END
     """, {
@@ -293,7 +292,7 @@ def save_pipeline_result(
 
 
 def load_dummy_data():
-    """더미 데이터 전체를 Neo4j에 저장 (온보딩 + KHT 항목)"""
+    """더미 데이터 전체를 Neo4j에 저장 (WeeklyReport 포맷)"""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dummy_path = os.path.join(base_dir, "routers", "dummy_data.json")
 
@@ -302,15 +301,8 @@ def load_dummy_data():
 
     print(f"총 {len(data)}명 저장 시작...\n")
 
-    for user in data:
-        save_user_onboarding(user)
-
-        for retro in user.get("retrospectives", []):
-            save_weekly_retrospective(
-                user_id=user["user_id"],
-                week=retro["week"],
-                retro=retro,
-            )
+    for report in data:
+        save_user_report(report)
 
     print("\n더미 데이터 저장 완료!")
 
