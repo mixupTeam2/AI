@@ -4,13 +4,17 @@ import requests
 import os
 from dotenv import load_dotenv
 from route import router
+from routers.graph import router as graph_router
+from routers.recommend import router as recommend_router
 
 load_dotenv()
 
 app = FastAPI(title="CareType API")
 app.include_router(router, prefix="/api")
+app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
+app.include_router(recommend_router, prefix="/api/rag", tags=["rag"])
 
-API_KEY = os.getenv("SOLAR_API_KEY", "")
+API_KEY = os.getenv("SOLAR_API_KEY") or os.getenv("UPSTAGE_API_KEY", "")
 SOLAR_URL = "https://api.upstage.ai/v1/solar/chat/completions"
 
 

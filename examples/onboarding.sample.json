@@ -1,0 +1,18 @@
+{
+  "user_id": "demo_user_001",
+  "spec": {
+    "gpa": 3.7,
+    "activities": ["교내 프로젝트", "인턴 준비 스터디"],
+    "lab_experience": false,
+    "certifications": ["SQLD"]
+  },
+  "values_priority": [
+    "워라밸",
+    "직무",
+    "도메인",
+    "근무지",
+    "안정성",
+    "연봉",
+    "기업규모"
+  ]
+}

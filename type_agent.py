@@ -103,7 +103,7 @@ def run_type_agent(
           "axis_labels": {"axis1": "E", ...}
         }
     """
-    key = api_key or os.environ.get("UPSTAGE_API_KEY")
+    key = api_key or os.environ.get("SOLAR_API_KEY") or os.environ.get("UPSTAGE_API_KEY")
     if not key:
         raise ValueError("API 키가 필요합니다.")
 

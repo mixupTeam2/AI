@@ -68,7 +68,7 @@ def run_reframing_agent(
           "meta": {"user_id", "week"}  # Graph DB 저장 시 사용
         }
     """
-    key = api_key or os.environ.get("UPSTAGE_API_KEY")
+    key = api_key or os.environ.get("SOLAR_API_KEY") or os.environ.get("UPSTAGE_API_KEY")
     if not key:
         raise ValueError("API 키가 필요합니다. UPSTAGE_API_KEY 환경변수를 설정하거나 api_key 인자를 전달하세요.")
 
