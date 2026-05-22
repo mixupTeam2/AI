@@ -2,7 +2,8 @@
   {
     "user_id": "user_001",
     "week": 1,
-    "care_type": "DE-R",
+    "care_type": "APGC",
+    "care_type_name": "묵묵한 설계자",
     "emotion": "불안",
     "emotion_signal": "burnout",
     "concern_keywords": ["자소서 공백기", "취업 방향 모름"],
@@ -14,7 +15,8 @@
   {
     "user_id": "user_002",
     "week": 1,
-    "care_type": "ST-W",
+    "care_type": "EPGC",
+    "care_type_name": "열정적인 추진자",
     "emotion": "의욕",
     "emotion_signal": "recovery",
     "concern_keywords": ["직무 확신 없음", "포트폴리오 부족"],
@@ -26,7 +28,8 @@
   {
     "user_id": "user_003",
     "week": 1,
-    "care_type": "PU-S",
+    "care_type": "APRC",
+    "care_type_name": "인정받는 완벽주의자",
     "emotion": "번아웃",
     "emotion_signal": "burnout",
     "concern_keywords": ["준비 기간 길어짐", "합격 불안"],
@@ -38,7 +41,8 @@
   {
     "user_id": "user_004",
     "week": 1,
-    "care_type": "DE-R",
+    "care_type": "APRS",
+    "care_type_name": "현실적인 조율자",
     "emotion": "불안",
     "emotion_signal": "burnout",
     "concern_keywords": ["자소서 완성도", "경쟁자 비교"],
@@ -50,7 +54,8 @@
   {
     "user_id": "user_005",
     "week": 1,
-    "care_type": "ST-W",
+    "care_type": "EXGS",
+    "care_type_name": "네트워크형 모험가",
     "emotion": "의욕",
     "emotion_signal": "recovery",
     "concern_keywords": ["스타트업 불안정성", "연봉 고민"],
